@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}
