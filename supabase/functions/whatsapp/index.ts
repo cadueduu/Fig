@@ -216,6 +216,19 @@ async function sha256(b: Uint8Array) {
 // ---------- Figurinhas da Lovecell pelo código (lovecell.com.br/figurinhas/<código>) ----------
 const LOVECELL_UA = "Mozilla/5.0 (compatible; FigFigurinhas/1.0)";
 
+// Título da figurinha, lido da página dela; opcional (só serve para nomear na coleção).
+async function tituloLovecell(codigo: string) {
+  try {
+    const pagina = await fetch(`https://lovecell.com.br/figurinhas/${codigo}`, { headers: { "User-Agent": LOVECELL_UA } });
+    if (!pagina.ok) return null;
+    const html = (await pagina.text()).replaceAll('\\"', '"');
+    const titulo = html.match(new RegExp(`"sticker":\\{"id":${codigo},"imageName":"[0-9a-f]+"[^}]*?"stickerTitle":"([^"]*)"`))?.[1];
+    return titulo ? titulo.slice(0, 120) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function lovecell(owner: string, codigos: unknown) {
   if (!Array.isArray(codigos) || !codigos.length) throw new Erro(400, "Informe pelo menos um código.");
   if (codigos.length > 10) throw new Erro(400, "Envie no máximo 10 códigos por vez.");
@@ -224,18 +237,13 @@ async function lovecell(owner: string, codigos: unknown) {
   for (const bruto of codigos) {
     const codigo = String(bruto).trim();
     if (!/^\d{1,9}$/.test(codigo)) throw new Erro(400, `Código inválido: ${codigo}`);
-    const pagina = await fetch(`https://lovecell.com.br/figurinhas/${codigo}`, { headers: { "User-Agent": LOVECELL_UA } });
-    if (pagina.status === 404) throw new Erro(404, `Figurinha ${codigo} não encontrada na Lovecell.`);
-    if (!pagina.ok) throw new Erro(502, `A Lovecell respondeu ${pagina.status} para a figurinha ${codigo}.`);
-    const html = (await pagina.text()).replaceAll('\\"', '"');
-    const achado = html.match(new RegExp(`"sticker":\\{"id":${codigo},"imageName":"([0-9a-f]{32,128})"[^}]*?"stickerTitle":"([^"]*)"`));
-    const imagem = achado?.[1] ?? html.match(/property="og:image" content="https:\/\/img2\.lovecell\.com\.br\/([0-9a-f]{32,128})\.webp"/)?.[1];
-    if (!imagem) throw new Erro(404, `Não encontrei a imagem da figurinha ${codigo}.`);
-    const titulo = (achado?.[2] ?? `Lovecell ${codigo}`).slice(0, 120);
-
-    const resposta = await fetch(`https://img2.lovecell.com.br/${imagem}.webp`, { headers: { "User-Agent": LOVECELL_UA } });
-    if (!resposta.ok) throw new Erro(502, `Não consegui baixar a figurinha ${codigo} (${resposta.status}).`);
+    // Mesmo arquivo que o botão de download do site entrega (512x512, sem a faixa de divulgação
+    // que a imagem de exibição em img2.lovecell.com.br tem).
+    const resposta = await fetch(`https://lovecell.com.br/api/sticker-file?id=${codigo}`, { headers: { "User-Agent": LOVECELL_UA } });
+    if (resposta.status === 404) throw new Erro(404, `Figurinha ${codigo} não encontrada na Lovecell.`);
+    if (!resposta.ok) throw new Erro(502, `A Lovecell respondeu ${resposta.status} para a figurinha ${codigo}.`);
     const bytes = new Uint8Array(await resposta.arrayBuffer());
+    const titulo = (await tituloLovecell(codigo)) ?? `Lovecell ${codigo}`;
     const info = webpInfo(bytes);
     if (!info) throw new Erro(415, `A figurinha ${codigo} não veio em WebP.`);
     if (bytes.length > 500 * 1024) throw new Erro(413, `A figurinha ${codigo} passa de 500 KB.`);
