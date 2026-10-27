@@ -40,6 +40,7 @@
     color: var(--text);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  a { color: var(--accent); }
   main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
   h1 { font-size: 1.6rem; margin: 0 0 4px; }
   .lead { color: var(--muted); margin: 0 0 20px; }
@@ -138,6 +139,13 @@
   <section class="card hidden" id="send">
     <div class="actions">
       <button class="btn primary" id="share" type="button">Enviar para o meu WhatsApp</button>
+      <button class="btn primary" id="save" type="button">Salvar figurinhas no computador</button>
+      <ol class="how hidden" id="desktopHow">
+        <li>Clique em <b>Salvar figurinhas no computador</b> e escolha uma pasta (ou elas vão para Downloads).</li>
+        <li>Abra o <a href="https://web.whatsapp.com" target="_blank" rel="noopener">WhatsApp Web</a> ou o app do WhatsApp para computador e entre na conversa com <b>você mesmo</b>.</li>
+        <li>Selecione os arquivos <code>.webp</code> na pasta, arraste para dentro da conversa e envie. Você também pode arrastar as figurinhas direto desta página.</li>
+        <li>Clique em cada figurinha recebida e em <b>Adicionar às favoritas</b>.</li>
+      </ol>
       <div class="row">
         <label class="field">Nome do pacote<input id="title" value="Minhas figurinhas" maxlength="128"></label>
         <label class="field">Autor<input id="author" value="Fig" maxlength="128"></label>
@@ -170,6 +178,9 @@ const PACK_MIN = 3;
 const PACK_MAX = 30;
 
 const $ = (id) => document.getElementById(id);
+const IS_MOBILE = navigator.userAgentData
+  ? navigator.userAgentData.mobile
+  : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const stickers = []; // { id, name, blob, url, animated, error }
 let nextId = 1;
 
@@ -319,6 +330,15 @@ function render() {
       const img = document.createElement("img");
       img.src = s.url;
       img.alt = s.name;
+      if (!s.error) {
+        // Arrastar a figurinha para fora da página leva o arquivo .webp junto.
+        img.draggable = true;
+        img.addEventListener("dragstart", (e) => {
+          const name = fileName(ok.indexOf(s));
+          try { e.dataTransfer.items.add(new File([s.blob], name, { type: "image/webp" })); } catch {}
+          e.dataTransfer.setData("DownloadURL", `image/webp:${name}:${s.url}`);
+        });
+      }
       cell.append(img);
     }
     const tag = document.createElement("span");
@@ -346,13 +366,46 @@ function render() {
     (animated ? ` (${animated} animada${animated === 1 ? "" : "s"})` : "");
   $("result").classList.toggle("hidden", !stickers.length);
   $("send").classList.toggle("hidden", !ok.length);
-  for (const id of ["share", "pack", "zip"]) $(id).disabled = !ok.length;
-  setStatus(ok.length ? "Pronto! Toque em “Enviar para o meu WhatsApp”." : stickers.length ? "Nenhuma figurinha válida." : "",
+  for (const id of ["share", "save", "pack", "zip"]) $(id).disabled = !ok.length;
+  const next = IS_MOBILE ? "Toque em “Enviar para o meu WhatsApp”." : "Clique em “Salvar figurinhas no computador”.";
+  setStatus(ok.length ? `Pronto! ${next}` : stickers.length ? "Nenhuma figurinha válida." : "",
             !ok.length && stickers.length ? "error" : "");
 }
 
+function fileName(i) {
+  const base = safeName($("title").value).toLowerCase().replace(/\s+/g, "-");
+  return `${base}-${String(i + 1).padStart(2, "0")}.webp`;
+}
+
 function stickerFiles() {
-  return valid().map((s, i) => new File([s.blob], `figurinha-${String(i + 1).padStart(2, "0")}.webp`, { type: "image/webp" }));
+  return valid().map((s, i) => new File([s.blob], fileName(i), { type: "image/webp" }));
+}
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Salva cada figurinha como .webp numa pasta escolhida (Chrome/Edge) ou em Downloads.
+async function saveAll() {
+  const files = stickerFiles();
+  if (window.showDirectoryPicker) {
+    try {
+      const dir = await window.showDirectoryPicker({ id: "figurinhas", mode: "readwrite", startIn: "downloads" });
+      for (const file of files) {
+        const writable = await (await dir.getFileHandle(file.name, { create: true })).createWritable();
+        await writable.write(file);
+        await writable.close();
+      }
+      setStatus(`${files.length} figurinha${files.length === 1 ? "" : "s"} salva${files.length === 1 ? "" : "s"} na pasta “${dir.name}”. Agora arraste para a conversa no WhatsApp.`);
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      // Pasta bloqueada pelo navegador etc.: cai para downloads comuns.
+    }
+  }
+  for (let i = 0; i < files.length; i++) {
+    if (i) await delay(400); // navegadores descartam downloads simultâneos
+    download(files[i], files[i].name);
+  }
+  setStatus(`${files.length} figurinha${files.length === 1 ? "" : "s"} enviada${files.length === 1 ? "" : "s"} para Downloads. Se o navegador perguntar, permita vários downloads.`);
 }
 
 function download(blob, name) {
@@ -431,7 +484,12 @@ const drop = $("drop");
 drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
+// Celular: compartilhar direto no WhatsApp. Computador: salvar os .webp e arrastar para o WhatsApp.
+$("share").classList.toggle("hidden", !IS_MOBILE);
+$("save").classList.toggle("hidden", IS_MOBILE);
+$("desktopHow").classList.toggle("hidden", IS_MOBILE);
 $("share").addEventListener("click", share);
+$("save").addEventListener("click", saveAll);
 $("pack").addEventListener("click", downloadPacks);
 $("zip").addEventListener("click", downloadZip);
 $("clear").addEventListener("click", () => {
