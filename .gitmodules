@@ -1,0 +1,4 @@
+[submodule "rea"]
+	path = rea
+	url = https://github.com/morluto/rea
+	shallow = true
