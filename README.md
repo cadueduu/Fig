@@ -63,6 +63,18 @@ na tabela `public.figurinhas` e no bucket privado `figurinhas` (cada conta só a
 use **Guardar na minha coleção**; no celular, selecione várias na coleção, toque em **Usar selecionadas** e envie ou
 salve. Arquivos são nomeados pelo SHA-256, então a mesma figurinha não é guardada duas vezes.
 
+**WhatsApp pelo site:** logado, o site mostra o status do WhatsApp e, se não estiver conectado, já exibe o QR.
+Depois de escanear, **Enviar para o meu WhatsApp** (e **Enviar selecionadas para o WhatsApp**, na coleção) manda as
+figurinhas, estáticas e animadas, para a sua própria conversa. Quem faz isso é a Edge Function
+[`supabase/functions/whatsapp`](supabase/functions/whatsapp/index.ts) (Baileys, não oficial):
+
+- a sessão fica em `public.whatsapp_auth` (sem acesso pelo site, só pela função) e o estado/QR em `public.whatsapp_status`;
+- só contas em `public.whatsapp_permitidos` podem usar;
+- cada envio reconecta com a sessão salva, envia até 10 figurinhas por chamada e desconecta.
+
+Quem tiver a chave service role do projeto tem acesso a essa sessão, ou seja, ao WhatsApp conectado. Para encerrar,
+use **Desconectar** no site ou remova o aparelho "Fig Figurinhas" em *Aparelhos conectados* no celular.
+
 Para testar localmente: `python3 -m http.server -d site 8000` e abra http://localhost:8000.
 
 ## Enviar figurinhas pelo WhatsApp conectado

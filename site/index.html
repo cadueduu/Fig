@@ -85,6 +85,9 @@
     background: var(--accent); color: var(--accent-text);
     font-weight: 700; line-height: 24px; text-align: center;
   }
+  .wa { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 14px; }
+  .qr { background: #fff; padding: 12px; border-radius: 12px; width: min(280px, 100%); margin: 12px auto 4px; }
+  .qr svg { display: block; width: 100%; height: auto; }
   label.field select {
     font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
@@ -145,6 +148,19 @@
         <strong id="colCount">Minha coleção</strong>
         <span class="muted"><span id="who"></span> · <a href="#" id="logout">Sair</a></span>
       </div>
+      <div class="wa" id="waBox">
+        <div class="row" style="justify-content: space-between;">
+          <span><b>WhatsApp:</b> <span id="waState">verificando…</span></span>
+          <span class="row">
+            <button class="btn" id="waConnect" type="button">Conectar</button>
+            <button class="btn hidden" id="waDisconnect" type="button">Desconectar</button>
+          </span>
+        </div>
+        <div class="hidden" id="waQrBox">
+          <div id="waQr" class="qr" role="img" aria-label="QR code para conectar o WhatsApp"></div>
+          <p class="muted">No celular: <b>WhatsApp → Aparelhos conectados → Conectar aparelho</b> e escaneie. O código muda sozinho a cada ~20 segundos.</p>
+        </div>
+      </div>
       <div class="row" style="margin-bottom: 12px;">
         <label class="field">Pacote<select id="packFilter"><option value="">Todos</option></select></label>
         <button class="btn" id="selectAll" type="button">Selecionar todas</button>
@@ -152,6 +168,7 @@
       <div class="grid" id="colGrid"></div>
       <p class="muted hidden" id="colEmpty">Nenhuma figurinha guardada ainda. Escolha figurinhas abaixo e toque em “Guardar na minha coleção”.</p>
       <div class="actions" style="margin-top: 12px;">
+        <button class="btn primary hidden" id="waSendSelected" type="button" disabled>Enviar selecionadas para o WhatsApp</button>
         <button class="btn primary" id="useSelected" type="button" disabled>Usar selecionadas</button>
         <button class="btn" id="deleteSelected" type="button" disabled>Apagar selecionadas</button>
       </div>
@@ -178,6 +195,7 @@
 
   <section class="card hidden" id="send">
     <div class="actions">
+      <button class="btn primary hidden" id="waSend" type="button">Enviar para o meu WhatsApp</button>
       <button class="btn hidden" id="store" type="button">Guardar na minha coleção</button>
       <button class="btn primary" id="share" type="button">Enviar para o meu WhatsApp</button>
       <p class="muted hidden" id="iosHint">No iPhone, a mesma tela também tem <b>Salvar em Arquivos</b> e <b>Salvar imagens</b>, para montar o pacote num app de figurinhas da App Store.</p>
@@ -210,6 +228,7 @@
 
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/supabase.min.js"></script>
+<script src="vendor/qrcode-generator.js"></script>
 <script>
 "use strict";
 
@@ -409,7 +428,7 @@ function render() {
     (animated ? ` (${animated} animada${animated === 1 ? "" : "s"})` : "");
   $("result").classList.toggle("hidden", !stickers.length);
   $("send").classList.toggle("hidden", !ok.length);
-  for (const id of ["store", "share", "save", "pack", "zip"]) $(id).disabled = !ok.length;
+  for (const id of ["waSend", "store", "share", "save", "pack", "zip"]) $(id).disabled = !ok.length;
   const next = IS_MOBILE ? "Toque em “Enviar para o meu WhatsApp”." : "Clique em “Salvar figurinhas no computador”.";
   setStatus(ok.length ? `Pronto! ${next}` : stickers.length ? "Nenhuma figurinha válida." : "",
             !ok.length && stickers.length ? "error" : "");
@@ -541,7 +560,15 @@ function authUI() {
   $("collectionBox").classList.toggle("hidden", !user);
   $("store").classList.toggle("hidden", !user);
   $("who").textContent = user?.email || "";
-  if (user) loadCollection();
+  if (user) {
+    loadCollection();
+    // Ao entrar, se o WhatsApp não estiver conectado, já mostra o QR.
+    waLoad().then(() => { if (wa.estado === "desconectado") waConnect(); });
+  } else {
+    clearTimeout(waTimer);
+    wa = { estado: "desconectado" };
+    applySendMode();
+  }
 }
 
 db.auth.onAuthStateChange((_event, session) => {
@@ -612,7 +639,7 @@ function renderCollection() {
   $("colEmpty").classList.toggle("hidden", collection.length > 0);
   $("colCount").textContent = `Minha coleção (${collection.length})`;
   $("useSelected").textContent = selected.size ? `Usar selecionadas (${selected.size})` : "Usar selecionadas";
-  $("useSelected").disabled = $("deleteSelected").disabled = !selected.size;
+  $("useSelected").disabled = $("deleteSelected").disabled = $("waSendSelected").disabled = !selected.size;
   $("selectAll").textContent = list.length && list.every((c) => selected.has(c.id)) ? "Desmarcar todas" : "Selecionar todas";
 }
 
@@ -658,9 +685,11 @@ async function sha256(blob) {
 }
 
 // Guarda as figurinhas prontas; o nome do arquivo é o hash, então repetidas não duplicam.
-async function store() {
+// Devolve os caminhos no bucket (ou null se falhar), para o envio pelo WhatsApp usar.
+async function store({ silent = false } = {}) {
   const list = valid();
   const pacote = $("title").value.trim() || null;
+  const caminhos = [];
   let saved = 0;
   let repeated = 0;
   for (const [i, s] of list.entries()) {
@@ -669,29 +698,145 @@ async function store() {
     const { error } = await db.storage.from(BUCKET).upload(caminho, s.blob, { contentType: "image/webp", upsert: false });
     if (error && !/exists|duplicate/i.test(error.message)) {
       setStatus(`Erro ao guardar ${s.name}: ${error.message}`, "error");
-      return;
+      return null;
     }
     const { data, error: rowError } = await db.from("figurinhas")
       .upsert({ nome: s.name, pacote, animada: !!s.animated, caminho, tamanho: s.blob.size }, { onConflict: "caminho", ignoreDuplicates: true })
       .select("id");
     if (rowError) {
       setStatus(`Erro ao registrar ${s.name}: ${rowError.message}`, "error");
-      return;
+      return null;
     }
     data.length ? saved++ : repeated++;
+    caminhos.push(caminho);
   }
   await loadCollection();
-  setStatus(`${saved} figurinha${saved === 1 ? "" : "s"} guardada${saved === 1 ? "" : "s"} na coleção` +
-            (repeated ? ` (${repeated} já estava${repeated === 1 ? "" : "m"} lá).` : "."));
+  if (!silent) {
+    setStatus(`${saved} figurinha${saved === 1 ? "" : "s"} guardada${saved === 1 ? "" : "s"} na coleção` +
+              (repeated ? ` (${repeated} já estava${repeated === 1 ? "" : "m"} lá).` : "."));
+  }
+  return caminhos;
 }
 
-$("store").addEventListener("click", store);
-$("iosHint").classList.toggle("hidden", !/iPhone|iPad|iPod/i.test(navigator.userAgent) && !(/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+$("store").addEventListener("click", () => store());
+
+// ---------- WhatsApp conectado pelo servidor (Edge Function `whatsapp` no Supabase) ----------
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const WA_PAREAMENTO_MS = 150000;
+let wa = { estado: "desconectado" };
+let waTimer = null;
+let waUltimoQr = "";
+
+async function waCall(acao, extra = {}) {
+  const { data, error } = await db.functions.invoke("whatsapp", { body: { acao, ...extra } });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).erro || msg; } catch {}
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function waLoad() {
+  clearTimeout(waTimer);
+  if (!user) return;
+  const { data } = await db.from("whatsapp_status").select("estado,qr,numero,erro,atualizado").eq("owner_id", user.id).maybeSingle();
+  wa = data || { estado: "desconectado" };
+  const aguardando = wa.estado === "iniciando" || wa.estado === "aguardando_qr";
+  if (aguardando && Date.now() - new Date(wa.atualizado).getTime() > WA_PAREAMENTO_MS) {
+    wa = { estado: "desconectado", erro: "O QR expirou." }; // pareamento abandonado
+  }
+  waUI();
+  if (wa.estado === "iniciando" || wa.estado === "aguardando_qr") waTimer = setTimeout(waLoad, 2000);
+}
+
+function waUI() {
+  const conectado = wa.estado === "conectado";
+  const aguardando = wa.estado === "iniciando" || wa.estado === "aguardando_qr";
+  const textos = {
+    desconectado: "desconectado",
+    iniciando: "gerando QR…",
+    aguardando_qr: "escaneie o QR abaixo",
+    conectado: `conectado${wa.numero ? ` (+${wa.numero})` : ""}`,
+  };
+  $("waState").textContent = (textos[wa.estado] || wa.estado) + (wa.erro && !conectado ? ` · ${wa.erro}` : "");
+  $("waConnect").classList.toggle("hidden", conectado || aguardando);
+  $("waDisconnect").classList.toggle("hidden", !conectado);
+  const mostrarQr = wa.estado === "aguardando_qr" && !!wa.qr;
+  $("waQrBox").classList.toggle("hidden", !mostrarQr);
+  if (mostrarQr && wa.qr !== waUltimoQr) {
+    waUltimoQr = wa.qr;
+    const q = qrcode(0, "L");
+    q.addData(wa.qr);
+    q.make();
+    $("waQr").innerHTML = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  }
+  applySendMode();
+}
+
+async function waConnect() {
+  wa = { estado: "iniciando" };
+  waUI();
+  try {
+    await waCall("conectar");
+  } catch (err) {
+    setStatus(`WhatsApp: ${err.message}`, "error");
+  }
+  await waLoad();
+}
+
+async function waSendPaths(caminhos) {
+  const botoes = ["waSend", "waSendSelected"];
+  for (const id of botoes) $(id).disabled = true;
+  try {
+    for (let i = 0; i < caminhos.length; i += 10) {
+      setStatus(`Enviando para o WhatsApp… ${Math.min(i + 10, caminhos.length)} de ${caminhos.length}`);
+      await waCall("enviar", { caminhos: caminhos.slice(i, i + 10) });
+    }
+    setStatus(`${caminhos.length} figurinha${caminhos.length === 1 ? "" : "s"} enviada${caminhos.length === 1 ? "" : "s"} para a sua conversa no WhatsApp. Favorite para usar sempre.`);
+    return true;
+  } catch (err) {
+    setStatus(`WhatsApp: ${err.message}`, "error");
+    await waLoad();
+    return false;
+  } finally {
+    $("waSend").disabled = !valid().length;
+    $("waSendSelected").disabled = !selected.size;
+  }
+}
+
+function applySendMode() {
+  const viaServidor = !!user && wa.estado === "conectado";
+  $("waSend").classList.toggle("hidden", !viaServidor);
+  $("waSendSelected").classList.toggle("hidden", !viaServidor);
+  $("share").classList.toggle("hidden", viaServidor || !IS_MOBILE);
+  $("save").classList.toggle("hidden", viaServidor || IS_MOBILE);
+  $("desktopHow").classList.toggle("hidden", viaServidor || IS_MOBILE);
+  $("iosHint").classList.toggle("hidden", viaServidor || !IS_IOS);
+}
+
+$("waConnect").addEventListener("click", waConnect);
+$("waDisconnect").addEventListener("click", async () => {
+  if (!confirm("Desconectar o WhatsApp deste site?")) return;
+  $("waDisconnect").disabled = true;
+  try { await waCall("desconectar"); } catch (err) { setStatus(`WhatsApp: ${err.message}`, "error"); }
+  $("waDisconnect").disabled = false;
+  await waLoad();
+});
+$("waSend").addEventListener("click", async () => {
+  const caminhos = await store({ silent: true });
+  if (caminhos?.length) await waSendPaths(caminhos);
+});
+$("waSendSelected").addEventListener("click", async () => {
+  const caminhos = collection.filter((c) => selected.has(c.id)).map((c) => c.caminho);
+  if (await waSendPaths(caminhos)) {
+    selected.clear();
+    renderCollection();
+  }
+});
 
 // Celular: compartilhar direto no WhatsApp. Computador: salvar os .webp e arrastar para o WhatsApp.
-$("share").classList.toggle("hidden", !IS_MOBILE);
-$("save").classList.toggle("hidden", IS_MOBILE);
-$("desktopHow").classList.toggle("hidden", IS_MOBILE);
+applySendMode();
 $("share").addEventListener("click", share);
 $("save").addEventListener("click", saveAll);
 $("pack").addEventListener("click", downloadPacks);
