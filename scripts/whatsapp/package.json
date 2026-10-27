@@ -1,0 +1,15 @@
+{
+  "name": "fig-whatsapp",
+  "private": true,
+  "type": "module",
+  "description": "Envia figurinhas para a sua própria conversa no WhatsApp",
+  "scripts": {
+    "enviar": "node enviar.mjs"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "pino": "9.7.0",
+    "qrcode": "1.5.4",
+    "jszip": "3.10.1"
+  }
+}

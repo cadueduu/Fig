@@ -61,6 +61,12 @@ if [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
   echo "$WANT" > "$STAMP"
 fi
 
+# 4. Dependências do envio de figurinhas pelo WhatsApp (scripts/whatsapp)
+if [ ! -d "$ROOT/scripts/whatsapp/node_modules" ]; then
+  log "instalando dependências de scripts/whatsapp"
+  (cd "$ROOT/scripts/whatsapp" && npm ci --no-fund --no-audit)
+fi
+
 # Disponibiliza o Node correto para os comandos seguintes da sessão do Claude Code
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo "export PATH=\"$NODE_HOME/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"

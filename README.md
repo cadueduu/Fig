@@ -59,3 +59,19 @@ conversa "Você"; depois favorite as figurinhas. Tudo é processado no navegador
 O site também gera pacotes `.wastickers` (separando animadas e estáticas, de 3 a 30 por pacote).
 
 Para testar localmente: `python3 -m http.server -d site 8000` e abra http://localhost:8000.
+
+## Enviar figurinhas pelo WhatsApp conectado
+
+`scripts/whatsapp/enviar.mjs` conecta ao **seu** WhatsApp como aparelho conectado (QR code ou código de
+pareamento) e envia as figurinhas para a sua própria conversa, já como figurinhas (estáticas e animadas).
+No fim, desconecta e apaga a sessão local (use `--manter` para continuar conectado).
+
+```bash
+cd scripts/whatsapp && npm ci
+node enviar.mjs pacote.wastickers pasta-com-webp/ figurinha.webp          # QR em figurinhas/whatsapp-qr.png
+node enviar.mjs --codigo 5511999999999 pacote.wastickers                   # código de pareamento
+```
+
+Usa a biblioteca não oficial [Baileys](https://github.com/WhiskeySockets/Baileys): use só com o seu número e
+poucos envios, porque o WhatsApp pode bloquear números que usam clientes não oficiais. A sessão fica em
+`~/.fig-whatsapp`, fora do repositório. A rede precisa liberar `web.whatsapp.com` e `*.whatsapp.net`.
