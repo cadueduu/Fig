@@ -157,7 +157,8 @@ async function parear(owner: string) {
 // Abre uma conexão com a sessão salva; falha se ela não existir mais.
 async function abrir(owner: string) {
   const { state, saveCreds } = await authState(owner);
-  if (!state.creds.registered) throw new Erro(409, "WhatsApp não conectado. Escaneie o QR primeiro.");
+  // Pareando por QR, `registered` continua false; o que indica sessão válida é `me`.
+  if (!state.creds.me?.id) throw new Erro(409, "WhatsApp não conectado. Escaneie o QR primeiro.");
   return await new Promise<ReturnType<typeof makeWASocket>>((resolve, reject) => {
     const sock = criarSocket(state);
     sock.ev.on("creds.update", saveCreds);
