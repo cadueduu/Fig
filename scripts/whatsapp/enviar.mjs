@@ -18,6 +18,15 @@ import JSZip from "jszip";
 import pino from "pino";
 import QRCode from "qrcode";
 
+// A libsignal (usada pela Baileys) imprime chaves de sessão no console; não deixamos isso ir para logs.
+for (const level of ["log", "info", "warn"]) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    if (typeof args[0] === "string" && /session|SessionEntry|prekey/i.test(args[0])) return;
+    original(...args);
+  };
+}
+
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const AUTH_DIR = path.join(homedir(), ".fig-whatsapp");
 // Em ambientes com proxy (HTTPS_PROXY), o WebSocket e o upload de mídia precisam passar por ele.
