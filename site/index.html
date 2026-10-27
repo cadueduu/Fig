@@ -77,6 +77,18 @@
     overflow: hidden;
   }
   .sticker.bad { border-color: var(--error); }
+  button.sticker { padding: 0; cursor: pointer; font: inherit; }
+  .sticker.selected { border-color: var(--accent); }
+  .sticker.selected::after {
+    content: "✓"; position: absolute; top: 4px; right: 4px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-text);
+    font-weight: 700; line-height: 24px; text-align: center;
+  }
+  label.field select {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
   .sticker img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .sticker .tag {
     position: absolute; left: 4px; bottom: 4px;
@@ -118,6 +130,34 @@
   <h1>Fig Figurinhas</h1>
   <p class="lead">Transforme pacotes <code>.wastickers</code> e imagens em figurinhas do WhatsApp e mande tudo de uma vez para a sua própria conversa. Tudo é processado no seu aparelho; nada é enviado para servidores.</p>
 
+  <section class="card" id="cloud">
+    <div id="loginBox">
+      <strong>Minha coleção</strong>
+      <p class="muted">Entre com a sua conta do Fitz para guardar figurinhas no computador e escolher no celular.</p>
+      <form id="loginForm" class="row">
+        <label class="field">E-mail<input id="email" type="email" autocomplete="username" required></label>
+        <label class="field">Senha<input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn primary" type="submit">Entrar</button>
+      </form>
+    </div>
+    <div id="collectionBox" class="hidden">
+      <div class="row" style="justify-content: space-between; margin-bottom: 10px;">
+        <strong id="colCount">Minha coleção</strong>
+        <span class="muted"><span id="who"></span> · <a href="#" id="logout">Sair</a></span>
+      </div>
+      <div class="row" style="margin-bottom: 12px;">
+        <label class="field">Pacote<select id="packFilter"><option value="">Todos</option></select></label>
+        <button class="btn" id="selectAll" type="button">Selecionar todas</button>
+      </div>
+      <div class="grid" id="colGrid"></div>
+      <p class="muted hidden" id="colEmpty">Nenhuma figurinha guardada ainda. Escolha figurinhas abaixo e toque em “Guardar na minha coleção”.</p>
+      <div class="actions" style="margin-top: 12px;">
+        <button class="btn primary" id="useSelected" type="button" disabled>Usar selecionadas</button>
+        <button class="btn" id="deleteSelected" type="button" disabled>Apagar selecionadas</button>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <label class="drop" id="drop">
       <input type="file" id="files" multiple accept=".wastickers,.zip,.webp,.png,.jpg,.jpeg,image/webp,image/png,image/jpeg">
@@ -138,7 +178,9 @@
 
   <section class="card hidden" id="send">
     <div class="actions">
+      <button class="btn hidden" id="store" type="button">Guardar na minha coleção</button>
       <button class="btn primary" id="share" type="button">Enviar para o meu WhatsApp</button>
+      <p class="muted hidden" id="iosHint">No iPhone, a mesma tela também tem <b>Salvar em Arquivos</b> e <b>Salvar imagens</b>, para montar o pacote num app de figurinhas da App Store.</p>
       <button class="btn primary" id="save" type="button">Salvar figurinhas no computador</button>
       <ol class="how hidden" id="desktopHow">
         <li>Clique em <b>Salvar figurinhas no computador</b> e escolha uma pasta (ou elas vão para Downloads).</li>
@@ -167,6 +209,7 @@
 </main>
 
 <script src="vendor/jszip.min.js"></script>
+<script src="vendor/supabase.min.js"></script>
 <script>
 "use strict";
 
@@ -366,7 +409,7 @@ function render() {
     (animated ? ` (${animated} animada${animated === 1 ? "" : "s"})` : "");
   $("result").classList.toggle("hidden", !stickers.length);
   $("send").classList.toggle("hidden", !ok.length);
-  for (const id of ["share", "save", "pack", "zip"]) $(id).disabled = !ok.length;
+  for (const id of ["store", "share", "save", "pack", "zip"]) $(id).disabled = !ok.length;
   const next = IS_MOBILE ? "Toque em “Enviar para o meu WhatsApp”." : "Clique em “Salvar figurinhas no computador”.";
   setStatus(ok.length ? `Pronto! ${next}` : stickers.length ? "Nenhuma figurinha válida." : "",
             !ok.length && stickers.length ? "error" : "");
@@ -484,6 +527,167 @@ const drop = $("drop");
 drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
+// ---------- Coleção no Supabase (projeto Fitz; cada conta só vê as próprias figurinhas) ----------
+const SUPABASE_URL = "https://wbftlfdoyzmjkmoisdbh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_A9ovIbyyf42kgVXGzYoZwg_L1JuLAnr";
+const BUCKET = "figurinhas";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let user = null;
+let collection = []; // { id, nome, pacote, animada, caminho, url }
+const selected = new Set();
+
+function authUI() {
+  $("loginBox").classList.toggle("hidden", !!user);
+  $("collectionBox").classList.toggle("hidden", !user);
+  $("store").classList.toggle("hidden", !user);
+  $("who").textContent = user?.email || "";
+  if (user) loadCollection();
+}
+
+db.auth.onAuthStateChange((_event, session) => {
+  const changed = (session?.user?.id || null) !== (user?.id || null);
+  user = session?.user || null;
+  if (changed) setTimeout(authUI, 0); // não chamar o Supabase dentro do callback
+});
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  setStatus("Entrando…");
+  const { error } = await db.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  if (error) setStatus(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : `Não foi possível entrar: ${error.message}`, "error");
+  else { $("password").value = ""; setStatus("Pronto, você entrou."); }
+});
+
+$("logout").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await db.auth.signOut();
+  collection = [];
+  selected.clear();
+  renderCollection();
+});
+
+async function loadCollection() {
+  $("colCount").textContent = "Carregando coleção…";
+  const { data, error } = await db.from("figurinhas").select("id,nome,pacote,animada,caminho").order("criado_em", { ascending: false });
+  if (error) {
+    $("colCount").textContent = "Minha coleção";
+    setStatus(`Erro ao carregar a coleção: ${error.message}`, "error");
+    return;
+  }
+  collection = data;
+  if (collection.length) {
+    const { data: urls } = await db.storage.from(BUCKET).createSignedUrls(collection.map((c) => c.caminho), 3600);
+    const byPath = new Map((urls || []).map((u) => [u.path, u.signedUrl]));
+    for (const c of collection) c.url = byPath.get(c.caminho);
+  }
+  for (const id of [...selected]) if (!collection.some((c) => c.id === id)) selected.delete(id);
+  const packs = [...new Set(collection.map((c) => c.pacote).filter(Boolean))].sort();
+  const current = $("packFilter").value;
+  $("packFilter").replaceChildren(new Option("Todos", ""), ...packs.map((p) => new Option(p, p)));
+  $("packFilter").value = packs.includes(current) ? current : "";
+  renderCollection();
+}
+
+function visibleCollection() {
+  const pack = $("packFilter").value;
+  return collection.filter((c) => !pack || c.pacote === pack);
+}
+
+function renderCollection() {
+  const list = visibleCollection();
+  $("colGrid").replaceChildren(...list.map((c) => {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "sticker" + (selected.has(c.id) ? " selected" : "");
+    cell.title = c.pacote ? `${c.nome} · ${c.pacote}` : c.nome;
+    cell.setAttribute("aria-pressed", selected.has(c.id));
+    if (c.url) cell.append(Object.assign(document.createElement("img"), { src: c.url, alt: c.nome, loading: "lazy" }));
+    cell.append(Object.assign(document.createElement("span"), { className: "tag", textContent: c.animada ? "animada" : "estática" }));
+    cell.onclick = () => {
+      selected.has(c.id) ? selected.delete(c.id) : selected.add(c.id);
+      renderCollection();
+    };
+    return cell;
+  }));
+  $("colEmpty").classList.toggle("hidden", collection.length > 0);
+  $("colCount").textContent = `Minha coleção (${collection.length})`;
+  $("useSelected").textContent = selected.size ? `Usar selecionadas (${selected.size})` : "Usar selecionadas";
+  $("useSelected").disabled = $("deleteSelected").disabled = !selected.size;
+  $("selectAll").textContent = list.length && list.every((c) => selected.has(c.id)) ? "Desmarcar todas" : "Selecionar todas";
+}
+
+$("packFilter").addEventListener("change", renderCollection);
+$("selectAll").addEventListener("click", () => {
+  const list = visibleCollection();
+  const all = list.every((c) => selected.has(c.id));
+  for (const c of list) all ? selected.delete(c.id) : selected.add(c.id);
+  renderCollection();
+});
+
+// Baixa as selecionadas para a área de trabalho, onde ficam os botões de enviar/salvar/pacote.
+$("useSelected").addEventListener("click", async () => {
+  const chosen = collection.filter((c) => selected.has(c.id));
+  setStatus(`Baixando ${chosen.length} figurinha${chosen.length === 1 ? "" : "s"}…`);
+  for (const c of chosen) {
+    const { data, error } = await db.storage.from(BUCKET).download(c.caminho);
+    if (error) stickers.push({ id: nextId++, name: c.nome, error: error.message, url: "", blob: new Blob() });
+    else await addSticker(c.nome, new Blob([data], { type: "image/webp" }));
+  }
+  const packs = new Set(chosen.map((c) => c.pacote).filter(Boolean));
+  if (packs.size === 1) $("title").value = [...packs][0];
+  selected.clear();
+  renderCollection();
+  render();
+  $("send").scrollIntoView({ behavior: "smooth" });
+});
+
+$("deleteSelected").addEventListener("click", async () => {
+  const chosen = collection.filter((c) => selected.has(c.id));
+  if (!confirm(`Apagar ${chosen.length} figurinha${chosen.length === 1 ? "" : "s"} da coleção?`)) return;
+  const { error } = await db.storage.from(BUCKET).remove(chosen.map((c) => c.caminho));
+  if (error) return setStatus(`Não foi possível apagar: ${error.message}`, "error");
+  await db.from("figurinhas").delete().in("id", chosen.map((c) => c.id));
+  selected.clear();
+  await loadCollection();
+  setStatus("Figurinhas apagadas.");
+});
+
+async function sha256(blob) {
+  const hash = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Guarda as figurinhas prontas; o nome do arquivo é o hash, então repetidas não duplicam.
+async function store() {
+  const list = valid();
+  const pacote = $("title").value.trim() || null;
+  let saved = 0;
+  let repeated = 0;
+  for (const [i, s] of list.entries()) {
+    setStatus(`Guardando ${i + 1} de ${list.length}…`);
+    const caminho = `${user.id}/${await sha256(s.blob)}.webp`;
+    const { error } = await db.storage.from(BUCKET).upload(caminho, s.blob, { contentType: "image/webp", upsert: false });
+    if (error && !/exists|duplicate/i.test(error.message)) {
+      setStatus(`Erro ao guardar ${s.name}: ${error.message}`, "error");
+      return;
+    }
+    const { data, error: rowError } = await db.from("figurinhas")
+      .upsert({ nome: s.name, pacote, animada: !!s.animated, caminho, tamanho: s.blob.size }, { onConflict: "caminho", ignoreDuplicates: true })
+      .select("id");
+    if (rowError) {
+      setStatus(`Erro ao registrar ${s.name}: ${rowError.message}`, "error");
+      return;
+    }
+    data.length ? saved++ : repeated++;
+  }
+  await loadCollection();
+  setStatus(`${saved} figurinha${saved === 1 ? "" : "s"} guardada${saved === 1 ? "" : "s"} na coleção` +
+            (repeated ? ` (${repeated} já estava${repeated === 1 ? "" : "m"} lá).` : "."));
+}
+
+$("store").addEventListener("click", store);
+$("iosHint").classList.toggle("hidden", !/iPhone|iPad|iPod/i.test(navigator.userAgent) && !(/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+
 // Celular: compartilhar direto no WhatsApp. Computador: salvar os .webp e arrastar para o WhatsApp.
 $("share").classList.toggle("hidden", !IS_MOBILE);
 $("save").classList.toggle("hidden", IS_MOBILE);

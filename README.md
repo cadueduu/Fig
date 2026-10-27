@@ -58,6 +58,11 @@ No celular: escolha os `.wastickers` ou as imagens, toque em **Enviar para o meu
 conversa "Você"; depois favorite as figurinhas. Tudo é processado no navegador, sem servidor e sem QR code.
 O site também gera pacotes `.wastickers` (separando animadas e estáticas, de 3 a 30 por pacote).
 
+**Minha coleção:** entrando com a conta do Fitz (Supabase `wbftlfdoyzmjkmoisdbh`), o site guarda as figurinhas
+na tabela `public.figurinhas` e no bucket privado `figurinhas` (cada conta só acessa as próprias). No computador,
+use **Guardar na minha coleção**; no celular, selecione várias na coleção, toque em **Usar selecionadas** e envie ou
+salve. Arquivos são nomeados pelo SHA-256, então a mesma figurinha não é guardada duas vezes.
+
 Para testar localmente: `python3 -m http.server -d site 8000` e abra http://localhost:8000.
 
 ## Enviar figurinhas pelo WhatsApp conectado

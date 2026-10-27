@@ -13,12 +13,16 @@ import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import makeWASocket, { Browsers, DisconnectReason, jidNormalizedUser, useMultiFileAuthState } from "baileys";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import JSZip from "jszip";
 import pino from "pino";
 import QRCode from "qrcode";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const AUTH_DIR = path.join(homedir(), ".fig-whatsapp");
+// Em ambientes com proxy (HTTPS_PROXY), o WebSocket e o upload de mídia precisam passar por ele.
+const PROXY = process.env.HTTPS_PROXY || process.env.https_proxy;
+const AGENT = PROXY ? new HttpsProxyAgent(PROXY) : undefined;
 const MAX_STATIC = 100 * 1024;
 const MAX_ANIMATED = 500 * 1024;
 
@@ -97,6 +101,8 @@ async function main() {
         auth: state,
         logger: pino({ level: "silent" }),
         browser: Browsers.ubuntu("Fig Figurinhas"),
+        agent: AGENT,
+        fetchAgent: AGENT,
         markOnlineOnConnect: false,
         syncFullHistory: false,
       });

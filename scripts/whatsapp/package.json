@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",
+    "https-proxy-agent": "7.0.6",
+    "jszip": "3.10.1",
     "pino": "9.7.0",
-    "qrcode": "1.5.4",
-    "jszip": "3.10.1"
+    "qrcode": "1.5.4"
   }
 }
