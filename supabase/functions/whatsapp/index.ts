@@ -228,8 +228,8 @@ async function lovecell(owner: string, codigos: unknown) {
     if (pagina.status === 404) throw new Erro(404, `Figurinha ${codigo} não encontrada na Lovecell.`);
     if (!pagina.ok) throw new Erro(502, `A Lovecell respondeu ${pagina.status} para a figurinha ${codigo}.`);
     const html = (await pagina.text()).replaceAll('\\"', '"');
-    const achado = html.match(new RegExp(`"sticker":\\{"id":${codigo},"imageName":"([0-9a-f]{32})"[^}]*?"stickerTitle":"([^"]*)"`));
-    const imagem = achado?.[1] ?? html.match(/property="og:image" content="https:\/\/img2\.lovecell\.com\.br\/([0-9a-f]{32})\.webp"/)?.[1];
+    const achado = html.match(new RegExp(`"sticker":\\{"id":${codigo},"imageName":"([0-9a-f]{32,128})"[^}]*?"stickerTitle":"([^"]*)"`));
+    const imagem = achado?.[1] ?? html.match(/property="og:image" content="https:\/\/img2\.lovecell\.com\.br\/([0-9a-f]{32,128})\.webp"/)?.[1];
     if (!imagem) throw new Erro(404, `Não encontrei a imagem da figurinha ${codigo}.`);
     const titulo = (achado?.[2] ?? `Lovecell ${codigo}`).slice(0, 120);
 
