@@ -48,3 +48,14 @@ python3 scripts/figurinhas.py pacote.wastickers outra-imagem.gif video.mp4 -o fi
 ```
 
 O WhatsApp só importa pacotes com 3 a 30 figurinhas. A pasta `figurinhas/` fica fora do git.
+
+## Site (GitHub Pages)
+
+`site/` é um site estático, publicado pelo workflow `.github/workflows/pages.yml` a cada push na `main`
+que altere `site/`. Para ativar, vá em **Settings → Pages → Source: GitHub Actions**.
+
+No celular: escolha os `.wastickers` ou as imagens, toque em **Enviar para o meu WhatsApp** e mande para a
+conversa "Você"; depois favorite as figurinhas. Tudo é processado no navegador, sem servidor e sem QR code.
+O site também gera pacotes `.wastickers` (separando animadas e estáticas, de 3 a 30 por pacote).
+
+Para testar localmente: `python3 -m http.server -d site 8000` e abra http://localhost:8000.

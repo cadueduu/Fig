@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fig Figurinhas</title>
+<meta name="description" content="Transforme pacotes .wastickers e imagens em figurinhas do WhatsApp e envie para você mesmo.">
+<meta name="theme-color" content="#25d366">
+<style>
+  :root {
+    --bg: #f4f6f5;
+    --card: #ffffff;
+    --text: #17201b;
+    --muted: #5d6b63;
+    --line: #dde3df;
+    --accent: #1fa855;
+    --accent-text: #ffffff;
+    --warn: #b45309;
+    --error: #c62828;
+    --check: repeating-conic-gradient(#eef1ef 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1412;
+      --card: #18201c;
+      --text: #e8efeb;
+      --muted: #98a69e;
+      --line: #2a3530;
+      --accent: #25d366;
+      --accent-text: #08130d;
+      --warn: #f0a050;
+      --error: #ff7b7b;
+      --check: repeating-conic-gradient(#202a25 0% 25%, #18201c 0% 50%) 50% / 16px 16px;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .drop {
+    display: block;
+    border: 2px dashed var(--line);
+    border-radius: 12px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .drop.over { border-color: var(--accent); }
+  .drop strong { display: block; font-size: 1.05rem; }
+  .drop span { color: var(--muted); font-size: .9rem; }
+  .drop input { display: none; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px;
+  }
+  .sticker {
+    position: relative;
+    aspect-ratio: 1;
+    background: var(--check);
+    border-radius: 12px;
+    border: 2px solid transparent;
+    overflow: hidden;
+  }
+  .sticker.bad { border-color: var(--error); }
+  .sticker img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .sticker .tag {
+    position: absolute; left: 4px; bottom: 4px;
+    font-size: .7rem; padding: 1px 6px; border-radius: 99px;
+    background: rgba(0,0,0,.6); color: #fff;
+  }
+  .sticker button {
+    position: absolute; top: 4px; right: 4px;
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 0; background: rgba(0,0,0,.6); color: #fff; cursor: pointer;
+    font-size: 16px; line-height: 26px; padding: 0;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .actions { display: grid; gap: 10px; }
+  .btn {
+    appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 12px; padding: 14px 16px; font: inherit; font-weight: 600; cursor: pointer;
+    text-align: center;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-size: 1.05rem; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  label.field { display: grid; gap: 4px; font-size: .9rem; color: var(--muted); flex: 1 1 200px; }
+  label.field input {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  #status { min-height: 1.5em; color: var(--muted); font-size: .92rem; margin: 10px 0 0; }
+  #status.warn { color: var(--warn); }
+  #status.error { color: var(--error); }
+  .issues { margin: 10px 0 0; padding-left: 18px; color: var(--warn); font-size: .9rem; }
+  ol.how { margin: 0; padding-left: 20px; }
+  ol.how li { margin-bottom: 6px; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fig Figurinhas</h1>
+  <p class="lead">Transforme pacotes <code>.wastickers</code> e imagens em figurinhas do WhatsApp e mande tudo de uma vez para a sua própria conversa. Tudo é processado no seu aparelho; nada é enviado para servidores.</p>
+
+  <section class="card">
+    <label class="drop" id="drop">
+      <input type="file" id="files" multiple accept=".wastickers,.zip,.webp,.png,.jpg,.jpeg,image/webp,image/png,image/jpeg">
+      <strong>Escolher figurinhas</strong>
+      <span>Pacotes .wastickers, .webp, .png ou .jpg (pode escolher vários)</span>
+    </label>
+    <p id="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="card hidden" id="result">
+    <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+      <strong id="count"></strong>
+      <button class="btn" id="clear" type="button">Limpar</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <ul class="issues hidden" id="issues"></ul>
+  </section>
+
+  <section class="card hidden" id="send">
+    <div class="actions">
+      <button class="btn primary" id="share" type="button">Enviar para o meu WhatsApp</button>
+      <div class="row">
+        <label class="field">Nome do pacote<input id="title" value="Minhas figurinhas" maxlength="128"></label>
+        <label class="field">Autor<input id="author" value="Fig" maxlength="128"></label>
+      </div>
+      <button class="btn" id="pack" type="button">Baixar pacote(s) .wastickers</button>
+      <button class="btn" id="zip" type="button">Baixar figurinhas (.zip)</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <strong>Como deixar as figurinhas sempre à mão</strong>
+    <ol class="how">
+      <li>No celular, toque em <b>Enviar para o meu WhatsApp</b>, escolha o WhatsApp e a conversa <b>“Você”</b> (seu próprio número).</li>
+      <li>Na conversa, toque em cada figurinha e em <b>Adicionar às favoritas</b>. Elas ficam na aba ⭐ da bandeja de figurinhas, sem precisar abrir links de novo.</li>
+      <li>Prefere um pacote inteiro? Use <b>Baixar pacote(s) .wastickers</b> e abra o arquivo com um app importador de figurinhas para WhatsApp. O WhatsApp exige de 3 a 30 figurinhas por pacote, sem misturar animadas e estáticas; o site separa isso sozinho.</li>
+    </ol>
+    <p class="muted">Figurinhas animadas de pacotes .wastickers são mantidas como estão. Para converter GIFs e vídeos, use <code>scripts/figurinhas.py</code> no repositório.</p>
+  </section>
+</main>
+
+<script src="vendor/jszip.min.js"></script>
+<script>
+"use strict";
+
+const SIZE = 512;
+const TRAY = 96;
+const MAX_STATIC = 100 * 1024;
+const MAX_ANIMATED = 500 * 1024;
+const PACK_MIN = 3;
+const PACK_MAX = 30;
+
+const $ = (id) => document.getElementById(id);
+const stickers = []; // { id, name, blob, url, animated, error }
+let nextId = 1;
+
+function setStatus(text, kind = "") {
+  $("status").textContent = text;
+  $("status").className = kind;
+}
+
+// Lê dimensões e animação do cabeçalho RIFF/WebP.
+function webpInfo(buf) {
+  const b = new Uint8Array(buf);
+  const str = (o, n) => String.fromCharCode(...b.subarray(o, o + n));
+  if (b.length < 30 || str(0, 4) !== "RIFF" || str(8, 4) !== "WEBP") return null;
+  const chunk = str(12, 4);
+  if (chunk === "VP8X") {
+    return {
+      animated: (b[20] & 0x02) !== 0,
+      width: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)),
+      height: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)),
+    };
+  }
+  if (chunk === "VP8 ") {
+    return { animated: false, width: (b[26] | (b[27] << 8)) & 0x3fff, height: (b[28] | (b[29] << 8)) & 0x3fff };
+  }
+  if (chunk === "VP8L") {
+    return {
+      animated: false,
+      width: 1 + (b[21] | ((b[22] & 0x3f) << 8)),
+      height: 1 + ((b[22] >> 6) | (b[23] << 2) | ((b[24] & 0x0f) << 10)),
+    };
+  }
+  return null;
+}
+
+function loadImage(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("imagem inválida")); };
+    img.src = url;
+  });
+}
+
+function canvasBlob(canvas, type, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+function drawFit(img, size) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const scale = Math.min(size / img.naturalWidth, size / img.naturalHeight);
+  const w = Math.round(img.naturalWidth * scale);
+  const h = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+  return canvas;
+}
+
+// Converte imagem estática em WebP 512x512 de até 100 KB.
+async function toStaticWebp(blob) {
+  const canvas = drawFit(await loadImage(blob), SIZE);
+  for (let q = 0.95; q > 0.05; q -= 0.1) {
+    const out = await canvasBlob(canvas, "image/webp", q);
+    if (!out || out.type !== "image/webp") {
+      throw new Error("este navegador não gera WebP; use o Chrome");
+    }
+    if (out.size <= MAX_STATIC) return out;
+  }
+  throw new Error("não coube em 100 KB");
+}
+
+async function prepare(name, blob) {
+  const isWebp = blob.type === "image/webp" || /\.webp$/i.test(name);
+  if (isWebp) {
+    const info = webpInfo(await blob.arrayBuffer());
+    if (!info) throw new Error("WebP inválido");
+    const webp = new Blob([blob], { type: "image/webp" });
+    if (info.animated) {
+      if (info.width !== SIZE || info.height !== SIZE) throw new Error(`animada com ${info.width}×${info.height}; precisa ser 512×512`);
+      if (webp.size > MAX_ANIMATED) throw new Error("animada acima de 500 KB");
+      return { blob: webp, animated: true };
+    }
+    if (info.width === SIZE && info.height === SIZE && webp.size <= MAX_STATIC) {
+      return { blob: webp, animated: false }; // já está pronta: mantém o original
+    }
+  }
+  return { blob: await toStaticWebp(blob), animated: false };
+}
+
+async function addSticker(name, blob) {
+  const item = { id: nextId++, name, animated: false, error: null };
+  try {
+    Object.assign(item, await prepare(name, blob));
+  } catch (err) {
+    item.error = err.message;
+    item.blob = blob;
+  }
+  item.url = URL.createObjectURL(item.blob);
+  stickers.push(item);
+}
+
+async function readPack(file) {
+  const zip = await JSZip.loadAsync(file);
+  const entries = Object.values(zip.files)
+    .filter((e) => !e.dir && /\.(webp|png|jpe?g)$/i.test(e.name) && !/(^|\/)tray\.png$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const title = zip.file(/(^|\/)title\.txt$/i)[0];
+  if (title && stickers.length === 0) $("title").value = (await title.async("string")).trim().slice(0, 128);
+  const author = zip.file(/(^|\/)author\.txt$/i)[0];
+  if (author && stickers.length === 0) $("author").value = (await author.async("string")).trim().slice(0, 128);
+  for (const entry of entries) {
+    const type = /\.webp$/i.test(entry.name) ? "image/webp" : /\.png$/i.test(entry.name) ? "image/png" : "image/jpeg";
+    await addSticker(entry.name.split("/").pop(), new Blob([await entry.async("uint8array")], { type }));
+  }
+}
+
+async function handleFiles(fileList) {
+  const files = [...fileList];
+  if (!files.length) return;
+  setStatus("Preparando figurinhas…");
+  for (const file of files) {
+    try {
+      if (/\.(wastickers|zip)$/i.test(file.name)) await readPack(file);
+      else await addSticker(file.name, file);
+    } catch (err) {
+      stickers.push({ id: nextId++, name: file.name, error: err.message || "arquivo inválido", url: "", blob: file });
+    }
+  }
+  render();
+}
+
+function valid() {
+  return stickers.filter((s) => !s.error);
+}
+
+function render() {
+  const ok = valid();
+  const grid = $("grid");
+  grid.replaceChildren();
+  for (const s of stickers) {
+    const cell = document.createElement("div");
+    cell.className = "sticker" + (s.error ? " bad" : "");
+    cell.title = s.error ? `${s.name}: ${s.error}` : s.name;
+    if (s.url) {
+      const img = document.createElement("img");
+      img.src = s.url;
+      img.alt = s.name;
+      cell.append(img);
+    }
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = s.error ? "erro" : s.animated ? "animada" : "estática";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "×";
+    del.setAttribute("aria-label", `Remover ${s.name}`);
+    del.onclick = () => {
+      URL.revokeObjectURL(s.url);
+      stickers.splice(stickers.indexOf(s), 1);
+      render();
+    };
+    cell.append(tag, del);
+    grid.append(cell);
+  }
+
+  const issues = stickers.filter((s) => s.error).map((s) => `${s.name}: ${s.error}`);
+  $("issues").replaceChildren(...issues.map((t) => Object.assign(document.createElement("li"), { textContent: t })));
+  $("issues").classList.toggle("hidden", !issues.length);
+
+  const animated = ok.filter((s) => s.animated).length;
+  $("count").textContent = `${ok.length} figurinha${ok.length === 1 ? "" : "s"} pronta${ok.length === 1 ? "" : "s"}` +
+    (animated ? ` (${animated} animada${animated === 1 ? "" : "s"})` : "");
+  $("result").classList.toggle("hidden", !stickers.length);
+  $("send").classList.toggle("hidden", !ok.length);
+  for (const id of ["share", "pack", "zip"]) $(id).disabled = !ok.length;
+  setStatus(ok.length ? "Pronto! Toque em “Enviar para o meu WhatsApp”." : stickers.length ? "Nenhuma figurinha válida." : "",
+            !ok.length && stickers.length ? "error" : "");
+}
+
+function stickerFiles() {
+  return valid().map((s, i) => new File([s.blob], `figurinha-${String(i + 1).padStart(2, "0")}.webp`, { type: "image/webp" }));
+}
+
+function download(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+function safeName(text) {
+  // Só ASCII: alguns navegadores trocam nomes acentuados por "download".
+  return (text || "").normalize("NFD").replace(/[^\x20-\x7e]/g, "").replace(/[\\/:*?"<>|]+/g, "").trim() || "figurinhas";
+}
+
+async function share() {
+  const files = stickerFiles();
+  if (!navigator.canShare || !navigator.canShare({ files })) {
+    setStatus("Este navegador não compartilha arquivos. Abra o site no celular (Chrome no Android ou Safari no iPhone) ou baixe o .zip.", "warn");
+    return;
+  }
+  try {
+    await navigator.share({ files });
+    setStatus("Enviado! Na conversa, toque em cada figurinha e em “Adicionar às favoritas”.");
+  } catch (err) {
+    if (err.name !== "AbortError") setStatus(`Não foi possível compartilhar: ${err.message}`, "error");
+  }
+}
+
+async function makeTray(blob) {
+  const canvas = drawFit(await loadImage(blob), TRAY);
+  return canvasBlob(canvas, "image/png");
+}
+
+async function downloadPacks() {
+  const title = $("title").value.trim() || "Minhas figurinhas";
+  const author = $("author").value.trim() || "Fig";
+  const groups = [
+    ["estáticas", valid().filter((s) => !s.animated)],
+    ["animadas", valid().filter((s) => s.animated)],
+  ].filter(([, list]) => list.length);
+  const notes = [];
+  let made = 0;
+  for (const [kind, list] of groups) {
+    const parts = Math.ceil(list.length / PACK_MAX);
+    for (let p = 0; p < parts; p++) {
+      const chunk = list.slice(p * PACK_MAX, (p + 1) * PACK_MAX);
+      const suffix = (groups.length > 1 ? ` ${kind}` : "") + (parts > 1 ? ` ${p + 1}` : "");
+      if (made) await new Promise((r) => setTimeout(r, 800)); // navegadores descartam downloads simultâneos
+      const zip = new JSZip();
+      zip.file("title.txt", title + suffix);
+      zip.file("author.txt", author);
+      zip.file("tray.png", await makeTray(chunk[0].blob));
+      chunk.forEach((s, i) => zip.file(`${String(i + 1).padStart(2, "0")}.webp`, s.blob));
+      download(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }), `${safeName(title + suffix)}.wastickers`);
+      made++;
+      if (chunk.length < PACK_MIN) {
+        notes.push(`“${title + suffix}” tem ${chunk.length} figurinha${chunk.length === 1 ? "" : "s"} (o WhatsApp exige pelo menos ${PACK_MIN})`);
+      }
+    }
+  }
+  setStatus(notes.length ? `Baixado, mas ${notes.join("; ")}.` : `${made} pacote${made === 1 ? "" : "s"} baixado${made === 1 ? "" : "s"}.`,
+            notes.length ? "warn" : "");
+}
+
+async function downloadZip() {
+  const zip = new JSZip();
+  for (const file of stickerFiles()) zip.file(file.name, file);
+  download(await zip.generateAsync({ type: "blob" }), `${safeName($("title").value)}.zip`);
+}
+
+$("files").addEventListener("change", (e) => { handleFiles(e.target.files); e.target.value = ""; });
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
+$("share").addEventListener("click", share);
+$("pack").addEventListener("click", downloadPacks);
+$("zip").addEventListener("click", downloadZip);
+$("clear").addEventListener("click", () => {
+  for (const s of stickers) URL.revokeObjectURL(s.url);
+  stickers.length = 0;
+  render();
+});
+</script>
+</body>
+</html>
