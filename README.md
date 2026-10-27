@@ -71,6 +71,9 @@ figurinhas, estáticas e animadas, para a sua própria conversa. Quem faz isso �
 - a sessão fica em `public.whatsapp_auth` (sem acesso pelo site, só pela função) e o estado/QR em `public.whatsapp_status`;
 - só contas em `public.whatsapp_permitidos` podem usar;
 - cada envio reconecta com a sessão salva, envia até 10 figurinhas por chamada e desconecta.
+- **Código da Lovecell:** com o WhatsApp conectado, digite o código (ex.: `24362`, de
+  `lovecell.com.br/figurinhas/24362`) ou cole o link; a função lê a página, baixa a imagem de `img2.lovecell.com.br`,
+  guarda na coleção (pacote "Lovecell") e envia. A figurinha vai no tamanho original (algumas não são 512×512).
 
 Quem tiver a chave service role do projeto tem acesso a essa sessão, ou seja, ao WhatsApp conectado. Para encerrar,
 use **Desconectar** no site ou remova o aparelho "Fig Figurinhas" em *Aparelhos conectados* no celular.

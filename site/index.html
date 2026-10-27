@@ -120,7 +120,8 @@
   }
   #status { min-height: 1.5em; color: var(--muted); font-size: .92rem; margin: 10px 0 0; }
   #status.warn { color: var(--warn); }
-  #status.error { color: var(--error); }
+  #status.error, #lcStatus.error { color: var(--error); }
+  #lcStatus { margin: 8px 0 0; font-size: .9rem; }
   .issues { margin: 10px 0 0; padding-left: 18px; color: var(--warn); font-size: .9rem; }
   ol.how { margin: 0; padding-left: 20px; }
   ol.how li { margin-bottom: 6px; }
@@ -161,6 +162,15 @@
           <p class="muted">No celular: <b>WhatsApp → Aparelhos conectados → Conectar aparelho</b> e escaneie. O código muda sozinho a cada ~20 segundos.</p>
         </div>
       </div>
+      <form class="wa hidden" id="lcForm">
+        <div class="row">
+          <label class="field">Código da figurinha na Lovecell
+            <input id="lcCodes" inputmode="numeric" placeholder="24362 ou o link da figurinha" autocomplete="off" required>
+          </label>
+          <button class="btn primary" id="lcSend" type="submit">Enviar pelo WhatsApp</button>
+        </div>
+        <p class="muted" id="lcStatus" role="status" aria-live="polite">Pode colar vários códigos separados por espaço ou vírgula.</p>
+      </form>
       <div class="row" style="margin-bottom: 12px;">
         <label class="field">Pacote<select id="packFilter"><option value="">Todos</option></select></label>
         <button class="btn" id="selectAll" type="button">Selecionar todas</button>
@@ -808,12 +818,37 @@ async function waSendPaths(caminhos) {
 function applySendMode() {
   const viaServidor = !!user && wa.estado === "conectado";
   $("waSend").classList.toggle("hidden", !viaServidor);
+  $("lcForm").classList.toggle("hidden", !viaServidor);
   $("waSendSelected").classList.toggle("hidden", !viaServidor);
   $("share").classList.toggle("hidden", viaServidor || !IS_MOBILE);
   $("save").classList.toggle("hidden", viaServidor || IS_MOBILE);
   $("desktopHow").classList.toggle("hidden", viaServidor || IS_MOBILE);
   $("iosHint").classList.toggle("hidden", viaServidor || !IS_IOS);
 }
+
+// Código(s) da Lovecell: o servidor busca a figurinha, guarda na coleção e envia.
+$("lcForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const lcStatus = (texto, kind = "") => { $("lcStatus").textContent = texto; $("lcStatus").className = kind || "muted"; };
+  const codigos = [...new Set($("lcCodes").value.match(/\d{3,9}/g) || [])];
+  if (!codigos.length) return lcStatus("Digite o código da figurinha (ex.: 24362) ou cole o link.", "error");
+  $("lcSend").disabled = true;
+  const titulos = [];
+  try {
+    for (let i = 0; i < codigos.length; i += 10) {
+      lcStatus(`Buscando na Lovecell e enviando… ${Math.min(i + 10, codigos.length)} de ${codigos.length}`);
+      titulos.push(...(await waCall("lovecell", { codigos: codigos.slice(i, i + 10) })).titulos);
+    }
+    lcStatus(`Enviada${titulos.length === 1 ? "" : "s"} para o seu WhatsApp: ${titulos.join(", ")}.`);
+    $("lcCodes").value = "";
+  } catch (err) {
+    lcStatus(err.message, "error");
+    await waLoad();
+  } finally {
+    $("lcSend").disabled = false;
+    loadCollection(); // as que deram certo antes do erro já estão guardadas
+  }
+});
 
 $("waConnect").addEventListener("click", waConnect);
 $("waDisconnect").addEventListener("click", async () => {

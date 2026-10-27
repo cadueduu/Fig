@@ -3,6 +3,7 @@
 // Ações (POST JSON, com o JWT do usuário logado):
 //   { acao: "conectar" }                  inicia o pareamento; o QR aparece em whatsapp_status
 //   { acao: "enviar", caminhos: [...] }  envia figurinhas do bucket `figurinhas`
+//   { acao: "lovecell", codigos: [...] } busca figurinhas na Lovecell pelo código, guarda e envia
 //   { acao: "desconectar" }              remove o aparelho e apaga a sessão
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { Buffer } from "node:buffer";
@@ -184,8 +185,74 @@ async function abrir(owner: string) {
   });
 }
 
-function webpAnimada(b: Uint8Array) {
-  return b.length > 21 && String.fromCharCode(...b.subarray(12, 16)) === "VP8X" && (b[20] & 0x02) !== 0;
+// Lê dimensões e animação do cabeçalho RIFF/WebP.
+function webpInfo(b: Uint8Array) {
+  const str = (o: number, n: number) => String.fromCharCode(...b.subarray(o, o + n));
+  if (b.length < 30 || str(0, 4) !== "RIFF" || str(8, 4) !== "WEBP") return null;
+  const chunk = str(12, 4);
+  if (chunk === "VP8X") {
+    return {
+      animada: (b[20] & 0x02) !== 0,
+      largura: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)),
+      altura: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)),
+    };
+  }
+  if (chunk === "VP8 ") return { animada: false, largura: (b[26] | (b[27] << 8)) & 0x3fff, altura: (b[28] | (b[29] << 8)) & 0x3fff };
+  if (chunk === "VP8L") {
+    return {
+      animada: false,
+      largura: 1 + (b[21] | ((b[22] & 0x3f) << 8)),
+      altura: 1 + ((b[22] >> 6) | (b[23] << 2) | ((b[24] & 0x0f) << 10)),
+    };
+  }
+  return null;
+}
+
+async function sha256(b: Uint8Array) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", b));
+  return [...hash].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- Figurinhas da Lovecell pelo código (lovecell.com.br/figurinhas/<código>) ----------
+const LOVECELL_UA = "Mozilla/5.0 (compatible; FigFigurinhas/1.0)";
+
+async function lovecell(owner: string, codigos: unknown) {
+  if (!Array.isArray(codigos) || !codigos.length) throw new Erro(400, "Informe pelo menos um código.");
+  if (codigos.length > 10) throw new Erro(400, "Envie no máximo 10 códigos por vez.");
+  const caminhos: string[] = [];
+  const titulos: string[] = [];
+  for (const bruto of codigos) {
+    const codigo = String(bruto).trim();
+    if (!/^\d{1,9}$/.test(codigo)) throw new Erro(400, `Código inválido: ${codigo}`);
+    const pagina = await fetch(`https://lovecell.com.br/figurinhas/${codigo}`, { headers: { "User-Agent": LOVECELL_UA } });
+    if (pagina.status === 404) throw new Erro(404, `Figurinha ${codigo} não encontrada na Lovecell.`);
+    if (!pagina.ok) throw new Erro(502, `A Lovecell respondeu ${pagina.status} para a figurinha ${codigo}.`);
+    const html = (await pagina.text()).replaceAll('\\"', '"');
+    const achado = html.match(new RegExp(`"sticker":\\{"id":${codigo},"imageName":"([0-9a-f]{32})"[^}]*?"stickerTitle":"([^"]*)"`));
+    const imagem = achado?.[1] ?? html.match(/property="og:image" content="https:\/\/img2\.lovecell\.com\.br\/([0-9a-f]{32})\.webp"/)?.[1];
+    if (!imagem) throw new Erro(404, `Não encontrei a imagem da figurinha ${codigo}.`);
+    const titulo = (achado?.[2] ?? `Lovecell ${codigo}`).slice(0, 120);
+
+    const resposta = await fetch(`https://img2.lovecell.com.br/${imagem}.webp`, { headers: { "User-Agent": LOVECELL_UA } });
+    if (!resposta.ok) throw new Erro(502, `Não consegui baixar a figurinha ${codigo} (${resposta.status}).`);
+    const bytes = new Uint8Array(await resposta.arrayBuffer());
+    const info = webpInfo(bytes);
+    if (!info) throw new Erro(415, `A figurinha ${codigo} não veio em WebP.`);
+    if (bytes.length > 500 * 1024) throw new Erro(413, `A figurinha ${codigo} passa de 500 KB.`);
+
+    const caminho = `${owner}/${await sha256(bytes)}.webp`;
+    const { error: upErro } = await admin.storage.from(BUCKET).upload(caminho, bytes, { contentType: "image/webp", upsert: false });
+    if (upErro && !/exists|duplicate/i.test(upErro.message)) throw new Erro(500, `Erro ao guardar a figurinha ${codigo}: ${upErro.message}`);
+    const { error: rowErro } = await admin.from("figurinhas").upsert(
+      { owner_id: owner, nome: `${titulo} (#${codigo})`, pacote: "Lovecell", animada: info.animada, caminho, tamanho: bytes.length },
+      { onConflict: "caminho", ignoreDuplicates: true },
+    );
+    if (rowErro) throw new Erro(500, `Erro ao registrar a figurinha ${codigo}: ${rowErro.message}`);
+    caminhos.push(caminho);
+    titulos.push(titulo);
+  }
+  const enviadas = await enviar(owner, caminhos);
+  return { enviadas, titulos };
 }
 
 async function enviar(owner: string, caminhos: unknown) {
@@ -202,7 +269,13 @@ async function enviar(owner: string, caminhos: unknown) {
   try {
     const eu = jidNormalizedUser(sock.user!.id);
     for (const bytes of arquivos) {
-      await sock.sendMessage(eu, { sticker: Buffer.from(bytes), isAnimated: webpAnimada(bytes), width: 512, height: 512 });
+      const info = webpInfo(bytes);
+      await sock.sendMessage(eu, {
+        sticker: Buffer.from(bytes),
+        isAnimated: info?.animada ?? false,
+        width: info?.largura ?? 512,
+        height: info?.altura ?? 512,
+      });
       await sleep(800);
     }
     await sleep(1500);
@@ -240,7 +313,7 @@ Deno.serve(async (req) => {
     const { data: liberado } = await admin.from("whatsapp_permitidos").select("user_id").eq("user_id", user.id).maybeSingle();
     if (!liberado) return responder({ erro: "O envio pelo WhatsApp não está liberado para esta conta." }, 403);
 
-    const { acao, caminhos } = await req.json().catch(() => ({}));
+    const { acao, caminhos, codigos } = await req.json().catch(() => ({}));
     if (acao === "conectar") {
       const { data: atual } = await admin.from("whatsapp_status").select("estado,atualizado").eq("owner_id", user.id).maybeSingle();
       const recente = atual && Date.now() - new Date(atual.atualizado).getTime() < PAREAMENTO_MS;
@@ -252,6 +325,7 @@ Deno.serve(async (req) => {
       return responder({ estado: "iniciando" });
     }
     if (acao === "enviar") return responder({ enviadas: await enviar(user.id, caminhos) });
+    if (acao === "lovecell") return responder(await lovecell(user.id, codigos));
     if (acao === "desconectar") {
       await desconectar(user.id);
       return responder({ estado: "desconectado" });
