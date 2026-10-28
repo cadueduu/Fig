@@ -69,7 +69,7 @@ figurinhas, estáticas e animadas, para a sua própria conversa. Quem faz isso �
 [`supabase/functions/whatsapp`](supabase/functions/whatsapp/index.ts) (Baileys, não oficial):
 
 - a sessão fica em `public.whatsapp_auth` (sem acesso pelo site, só pela função) e o estado/QR em `public.whatsapp_status`;
-- só contas em `public.whatsapp_permitidos` podem usar;
+- qualquer conta com login pode conectar o próprio WhatsApp; sessão, status e coleção ficam separados por conta;
 - cada envio reconecta com a sessão salva, envia até 10 figurinhas por chamada e desconecta.
 - **Código da Lovecell:** com o WhatsApp conectado, digite o código (ex.: `24362`, de
   `lovecell.com.br/figurinhas/24362`) ou cole o link; a função baixa a figurinha pelo mesmo download oficial do

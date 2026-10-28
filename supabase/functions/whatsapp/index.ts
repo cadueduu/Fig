@@ -318,8 +318,6 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data: { user } } = await admin.auth.getUser(jwt);
     if (!user) return responder({ erro: "Faça login." }, 401);
-    const { data: liberado } = await admin.from("whatsapp_permitidos").select("user_id").eq("user_id", user.id).maybeSingle();
-    if (!liberado) return responder({ erro: "O envio pelo WhatsApp não está liberado para esta conta." }, 403);
 
     const { acao, caminhos, codigos } = await req.json().catch(() => ({}));
     if (acao === "conectar") {
